@@ -1,24 +1,27 @@
-import streamlit as st
-import requests
-import json
-from datetime import datetime
 import os, re, html
-import time
-from collections import defaultdict
-from streamlit_folium import st_folium
+import requests
+import json                 
+import time                 # 딜레이 처리
+import streamlit as st
 import folium
-from geopy.geocoders import Nominatim
-from geopy.extra.rate_limiter import RateLimiter
-from streamlit_lottie import st_lottie
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 import pickle
 import bs4                      # 파싱.
-from PIL import Image
-from wordcloud import WordCloud
 
-@st.cache_data
+from geopy.geocoders import Nominatim
+from geopy.extra.rate_limiter import RateLimiter
+
+from streamlit_folium import st_folium
+from datetime import datetime
+from collections import defaultdict
+
+from streamlit_lottie import st_lottie
+from PIL import Image
+from wordcloud import WordCloud  # 단어 시각화 
+
+@st.cache_data(ttl=300) # 데이터 재계산을 막아주는 캐시, 같은 입력 & 같은 출력이면 함수 재실행X. ttl=300(5분간 캐시 사용)
 def load_lottiefile(filepath: str):
     """로컬 JSON 파일에서 Lottie 애니메이션 로드"""
     with open(filepath, "r", encoding="utf-8") as f:
@@ -28,6 +31,7 @@ NAVER_LOCAL_URL = "https://openapi.naver.com/v1/search/local.json"
 NAVER_BLOG_URL  = "https://openapi.naver.com/v1/search/blog.json"
 NAVER_IMAGE_URL = "https://openapi.naver.com/v1/search/image.json"
 
+# 시연** cache
 @st.cache_data(ttl=300)
 def get_lat_lon(address: str):
     geolocator = Nominatim(user_agent="streamlit-folium-demo", timeout=10)
@@ -248,10 +252,10 @@ def naver_search(url, params):
     r.raise_for_status()
     return r.json()
 
-# 지역 세분화 함수 (하이브리드 방식)
+# 지역 세분화 함수
 def generate_location_variations(base_location):
     """
-    지역별 세부 검색어 생성 (하이브리드 방식)
+    지역별 세부 검색어 생성
     
     1단계: 주요 도시는 미리 정의된 세부 지역 사용
     2단계: 없으면 기본 변형 패턴 생성
@@ -266,7 +270,7 @@ def generate_location_variations(base_location):
         if city_key.lower() in base or base in city_key.lower():
             variations.extend(subdivisions)
             return variations
-    
+        
     # 2단계: 주요 도시가 아니면 기본 변형 패턴 생성
     variations.extend([
         f"{base_location}역",
@@ -286,7 +290,7 @@ def generate_location_variations(base_location):
             f"{base_location} 2동",
             f"{base_location} 3동"
         ])
-    
+    #st.write(f'api검색 조건 확인 : {variations}')
     return variations
 
 # API 호출 함수
@@ -296,9 +300,9 @@ def fetch_restaurants_by_location(location, food_type="전체", max_per_location
     
     Parameters:
     - location: 검색할 지역, 혹은 상세 매장
-    - food_type: 음식 종류
+    - food_type: 음식 카테고리까지 선택 시 
     - max_per_location: 해당 지역에서 가져올 최대 개수 (기본 5개)
-    - detail_type : 한 음식점 검색일 경우 True
+    - detail_type : 한 음식점 디테일 검색일 경우 True
     
     Returns:
     - 맛집 리스트
@@ -322,7 +326,8 @@ def fetch_restaurants_by_location(location, food_type="전체", max_per_location
         "start": 1,
         "sort": "random"
     }
-    
+    # 시연** variations - 인천공항
+    #st.write(f'{search_query} 검색 시도 keyword 확인')
     try:
         response = requests.get(url, headers=naver_headers(), params=params, timeout=5)
         
@@ -396,7 +401,7 @@ def is_address_match(address, road_address, base_location):
     # 기본: 검색어가 주소에 포함되어 있는지 확인
     return base in full_address
 
-def detail_search_restaurants(search_key, target_count=50):
+def detail_search_restaurants(search_key):
     # 즐겨찾기 - 타겟 매장 정보 가져오기
     st.write(search_key)
     items = fetch_restaurants_by_location(location = search_key, max_per_location=5, detail_type=True)
@@ -519,7 +524,6 @@ def plotChart(count_dict, max_words_, container):
     container.pyplot(fig)
 
 # UI 구성 시작
-
 col1, col2 = st.columns([0.8, 8], gap="small")
 with col1:
     # Lottie 애니메이션 FILE (음식 관련 애니메이션)
@@ -529,7 +533,7 @@ with col1:
 with col2:
     st.markdown("<h1 style='margin-top: 25px; margin-left: -10px;'>지역별 맛집 추천</h1>", unsafe_allow_html=True)
 
-st.markdown("---")
+#st.markdown("---")
 
 # 사이드바 - 검색 옵션
 with st.sidebar:
@@ -636,6 +640,7 @@ def display_restaurant(item, index):
                 lat, lon = get_lat_lon(address)
 
                 if lat is not None and lon is not None:
+                    # folium을 이용한 지도 표기 
                     m = folium.Map(location=[lat, lon], zoom_start=16)
 
                     folium.Marker(
@@ -692,30 +697,29 @@ if st.session_state.current_tab == 1:
     title_name = f'{location} 지역 '
     if food_type:
         title_name += f'{food_type} 카테고리'
-    st.subheader(f'{title_name}검색 결과 입니다.')
     # st.image('https://static.streamlit.io/examples/cat.jpg')
     
-    # 검색 버튼이 클릭되었을 때
+    # 검색 버튼이 클릭되었을 때 # 시연** paging 
+    #st.write(f"{search_button} 값 체크 ********")
     if search_button:
         if not API_CONFIGURED:
             st.error("⚠️ API 키가 설정되지 않았습니다.")
         elif not location:
             st.warning("⚠️ 지역을 입력해주세요.")
         else:
+            st.subheader(f'{title_name} 검색 결과 입니다.')
+
             # 검색 실행
             target_count = 50  # 고정값으로 설정
             all_items = fetch_all_restaurants_with_variations(location, food_type, target_count)
             
             if all_items:
-            
                 # 검색 결과를 세션에 저장
                 st.session_state.current_results = all_items
                 st.session_state.current_search_query = f"{location} {food_type}"
                 st.session_state.current_page = 1  # 새 검색 시 1페이지로 리셋
             else:
                 st.warning("😢 검색 결과가 없습니다. 다른 지역이나 음식 종류를 시도해보세요.")
-
-
 
     # 저장된 검색 결과가 있으면 표시
     if st.session_state.current_results:
@@ -767,15 +771,19 @@ if st.session_state.current_tab == 1:
                 if st.button("마지막 ⏭️", disabled=(st.session_state.current_page == total_pages), key="last_page"):
                     st.session_state.current_page = total_pages
                     st.rerun()
+    else:
+        st.subheader(f'맛집 추천 Application에 오신 것을 환영합니다.')
 else: # current_tab = 2
-    # 즐겨찾기 검색 버튼이 클릭되었을 때 
+    # 상세화면 페이지 호출 (즐겨찾기, 메인 리스트에서 타이틀 선택시)
     if st.session_state.search_key:
-        search_key = st.session_state.search_key.get('title', '').replace('<b>', '').replace('</b>', '') + ("_") + st.session_state.search_key.get('address', '').replace('<b>', '').replace('</b>', '')
         title_name = st.session_state.search_key.get('title', '').replace('<b>', '').replace('</b>', '')
+        address = st.session_state.search_key.get('address', '').replace('<b>', '').replace('</b>', '')
+
+        search_key = title_name + ("_") + address
+
         st.subheader(f'{title_name} 상세 검색 결과 입니다.')
     
-        address = st.session_state.search_key.get('address', '').replace('<b>', '').replace('</b>', '')
-        items = detail_search_restaurants(search_key, target_count=50)
+        items = detail_search_restaurants(search_key)
 
         # 주소까지 포함된 주소로 상세 검색 시도
         if items : 
@@ -784,45 +792,49 @@ else: # current_tab = 2
         elif '동' in address :
             address = cut_to_dong(address)
             search_key = title_name + (" ") + address
-            items = detail_search_restaurants(search_key, target_count=50)
+            items = detail_search_restaurants(search_key)
         # 동이 미포함된 경우 title만으로 재검색 수행
         else :
-            search_key = st.session_state.search_key.get('title', '').replace('<b>', '').replace('</b>', '')
-            items = detail_search_restaurants(search_key, target_count=50)
+            search_key = title_name
+            items = detail_search_restaurants(search_key)
 
         if items:
             # 1. 블로그 카드형 노출
             detail_view_restaurants(items)
 
-            # 2. 블로그 세 개 크롤링
+            # 2. 블로그 3곳 target으로 크롤링
             corpus = ''
             blog_data = naver_search(NAVER_BLOG_URL, {"query": f"{search_key} 후기", "display": 3, "start": 1, "sort": "sim"})
             blog_items = blog_data.get("items", [])
 
             # 한개씩 직접 들어가서 크롤링해서 가져온다.
+            # 시연** 크롤링
             for item in blog_items:
                 news_url = item['link']
 
                 res = requests.get(news_url, headers={'User-Agent':'Mozilla'})    # 헤더에 User-Agent 정보를 넣어서 차단을 피한다.
                 soup = bs4.BeautifulSoup(res.text, 'html.parser')           # 파싱 진행.
-                posts = soup.select("ul.lst_view > li.bx")
                 iframe = soup.select_one("iframe#mainFrame")
                 if iframe:
                     real_url = "https://blog.naver.com" + iframe.get("src")
+                    #st.write(f'url type1 : {real_url}')
                 else:
                     real_url = news_url
-
+                    #st.write(f'url type2 : {real_url}')
                 res2 = requests.get(real_url, headers={'User-Agent':'Mozilla/5.0'})
                 soup2 = bs4.BeautifulSoup(res2.text, 'html.parser')
 
                 content = soup2.select_one("div.se-main-container")
                 if not content:
-                    content = soup2.select_one("#postViewArea")
+                    #st.write(f'content type1')
+                    sourceText = content = soup2.select_one("#postViewArea")
 
                 if content:
-                    text = content.get_text(" ", strip=True)
-                    corpus += text
+                    #st.write(f'content type2')
+                    sourceText = content.get_text(" ", strip=True)
 
+                corpus += sourceText
+                #st.write(sourceText)
                 # 워드 클라우드 차트가 출력될 위치.
                 chart_container = st.empty()
                 
@@ -843,7 +855,7 @@ st.markdown("---")
 st.markdown(
     """
     <div style='text-align: center; color: gray;'>
-    <p>본 서비스는 네이버 검색 API를 활용합니다.</p>
+    <p>본 서비스는 Python 부트캠프 '맛집찾아조'에서 제작 하였습니다.</p>
     </div>
     """,
     unsafe_allow_html=True
